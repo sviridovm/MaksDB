@@ -1,9 +1,17 @@
 from fastapi import FastAPI
-from pydantic import BaseModel
-from typing import List
+from utils import Entry, Search
+from db_manager import ModalDBManager, DBManager
 
 app = FastAPI()
 
+db_mananger = ModalDBManager()
 
-# @app.post("/items/")
-# async def add_item(vector_request: VectorRequest):
+
+@app.post("/query")
+def query(search: Search):
+    pass
+
+
+@app.post("/upsert")
+def upsert(entry: Entry):
+    pass

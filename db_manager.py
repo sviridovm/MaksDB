@@ -66,6 +66,7 @@ class DBManager:
 
             self.db.build_index()
             self.upsert_queue.clear()
+            self.db.save_index()
 
     def _rebuild(self):
         while True:
@@ -91,7 +92,6 @@ class ModalDBManager:
 
         self.read_queue = queue.Queue()
         self.write_queue = queue.Queue()
-        self.delete_db = False
 
     def set_mode_read(self):
         if self.mode == Mode.Read:
@@ -111,7 +111,8 @@ class ModalDBManager:
 
         self.executor.shutdown(wait=True)
         self.mode = Mode.Write
-        self.executor = concurrent.futures.ThreadPoolExecutor()
+        # Cannot write concurrently yet :eyes:
+        self.executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
         with self.executor:
             futures = [self.executor.map(self._write_ops, self.write_queue)]
 
@@ -121,6 +122,8 @@ class ModalDBManager:
 
         with self.write_queue.mutex:
             self.write_queue.clear()
+
+        self.db.save_index()
 
     # TODO: REFACTOR
 
