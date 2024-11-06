@@ -1,6 +1,6 @@
 from fastapi import FastAPI
-from utils import Entry, Search
-from db_manager import ModalDBManager, DBManager
+from Annoy.utils import Entry, Search
+from Annoy.db_manager import ModalDBManager, DBManager
 
 app = FastAPI()
 

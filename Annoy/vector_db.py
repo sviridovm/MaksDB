@@ -5,23 +5,23 @@ import os
 
 
 class VectorDB:
-    def __init__(self, src_path: str = None, vector_size: int = None, metric: str = 'cosine', n_trees=10, destPath: str = None):
+    def __init__(self, src_path: str = None, vector_size: int = None, metric: str = 'angular', n_trees=10, dest_path: str = None):
         if src_path:
             # check that filename exsists
 
             if not os.path.exists(src_path):
                 raise ValueError(f"File {src_path} does not exist")
 
-            self.load_index(src_path)
+            self.annoy_index = AnnoyIndex(vector_size, metric=metric)
+            self.annoy_index.load(src_path)
+            self.vector_size = vector_size
+            self.metric = metric
 
-            if destPath:
-                self.destPath = destPath
+            if dest_path:
+                self.dest_path = dest_path
             else:
-                self.destPath = src_path
+                self.dest_path = src_path
 
-            #! may crash if you load an empty db
-            self.vector_size = self.annoy_index.get_item_vector(0).shape[0]
-            self.metric = self.annoy_index.get_distance_function()
             self.n_trees = self.annoy_index.get_n_trees()
             self.index_built = True
         else:
@@ -30,7 +30,7 @@ class VectorDB:
             self.n_trees = n_trees
             self.index_built = False
             self.annoy_index = AnnoyIndex(vector_size, metric)
-            self.destPath = destPath
+            self.dest_path = dest_path
 
     def add_vector(self, vector_id: int, vector: np.ndarray):
         if len(vector) != self.vector_size:
@@ -48,15 +48,15 @@ class VectorDB:
             raise ValueError('Index is not built yet')
 
         if not filepath:
-            if not self.destPath:
+            if not self.dest_path:
                 raise ValueError('Save Destination Does Not Exist')
 
-            self.annoy_index.save(self.filepath)
+            self.annoy_index.save(self.dest_path)
         else:
             self.annoy_index.save(filepath)
 
     def set_dest_path(self, filepath: str):
-        self.destPath = filepath
+        self.dest_path = filepath
 
     def load_index(self, index_path):
         # check that index path exists
@@ -68,7 +68,7 @@ class VectorDB:
         if not self.index_built:
             raise ValueError('Index is not built yet')
 
-        return self.index.get_nns_by_vector(vector, n_neighbors)
+        return self.annoy_index.get_nns_by_vector(vector, n_neighbors, include_distances=True)
 
     def delete(self):
         self.index_built = False

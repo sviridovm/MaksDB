@@ -5,29 +5,29 @@ import threading
 class rwLock:
     def __init__(self):
         self.readers = 0
-        self.reader_lock: threading.Lock = threading.Lock()
-        self.writer_lock: threading.Lock = threading.Lock()
+        self.rLock: threading.Lock = threading.Lock()
+        self.wLock: threading.Lock = threading.Lock()
 
     def acquire_rLock(self):
-        self.reader_lock.acquire()
+        self.rLock.acquire()
         readers += 1
         if readers == 1:
-            self.writer_lock.Lock()
-        self.reader_lock.release()
+            self.wLock.Lock()
+        self.rLock.release()
 
     def release_rlock(self):
-        self.reader_lock.acquire()
+        self.rLock.acquire()
         assert self.readers > 0
         self.readers -= 1
         if self.readers == 0:
-            self.writer_lock.release()
-        self.reader_lock.release()
+            self.wLock.release()
+        self.rLock.release()
 
     def acquire_wLock(self):
-        self.writer_lock.acquire()
+        self.wLock.acquire()
 
     def release_wLock(self):
-        self.writer_lock.release()
+        self.wLock.release()
 
     @contextmanager
     def reader_lock(self):

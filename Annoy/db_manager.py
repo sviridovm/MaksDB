@@ -8,8 +8,8 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 import concurrent.futures
 import threading
 import numpy as np
-from vector_db import VectorDB
-from utils import Search, Entry
+from Annoy.vector_db import VectorDB
+from Annoy.utils import Search, Entry
 
 
 class DBManager:

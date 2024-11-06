@@ -1,8 +1,8 @@
 import grpc
 from concurrent import futures
-import vector_db_pb2_grpc
-import vector_db_pb2
-from db_manager import ModalDBManager, DBManager
+import Annoy.vector_db_pb2_grpc as vector_db_pb2_grpc
+import Annoy.vector_db_pb2 as vector_db_pb2
+from Annoy.db_manager import ModalDBManager, DBManager
 from google.rpc import code_pb2
 
 
