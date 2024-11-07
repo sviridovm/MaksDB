@@ -1,0 +1,11 @@
+#!/bin/bash
+
+set -Eeuo pipefail
+
+
+coordinator --dimension 10 --num_clusters 10
+sleep 1
+
+for i in $(seq 0 9); do
+    shard --dimension 10 --cluster_id $i
+done

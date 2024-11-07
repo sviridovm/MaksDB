@@ -1,6 +1,6 @@
 import time
 import warnings
-from rw_lock import rwLock
+from vectordb.utils.rw_lock import rwLock
 from enum import Enum
 import logging
 import queue

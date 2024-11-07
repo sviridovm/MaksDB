@@ -1,8 +1,10 @@
+import time
+import click
 import faiss
 import numpy as np
 import json_tricks as json
 import redis.client
-from rw_lock import rwLock
+from vectordb.utils.rw_lock import rwLock
 from threading import Thread
 import redis
 from concurrent.futures import ThreadPoolExecutor, Future
@@ -22,7 +24,6 @@ class DBShard:
 
         self.listen_thread = Thread(target = self.listen_for_coord, daemon=True).start()
 
-
         
     def listen_for_coord(self):
         resp_channel = f'CoordinatorChannel'  
@@ -32,14 +33,12 @@ class DBShard:
             
             if message['type'] != 'message':
                 continue
-            # print(message['data'])
 
             # message_type = json.loads(message['type'])
 
             data = json.loads(message['data'].decode('utf-8'))
             # data = message['data']
 
-            # print("DATA RECEIVED IS ", data)
                                 
             future = self.executor.submit(self.exec_command, data) 
             
@@ -47,13 +46,8 @@ class DBShard:
                 response = future.result()
                 response['response_id'] = data['response_id']
                 
-                print("ADDED VECTOR ATP")
-                
                 response = json.dumps(response).encode('utf-8')
                 self.redis_client.publish(resp_channel, response)
-
-                print("SENT RESPONSE")
-
 
             except Exception as e:
                 print(e)
@@ -73,6 +67,8 @@ class DBShard:
                 return self.remove_vectors(command['ids'])
             case 'update_vectors':
                 return self.update_vectors(command['ids'], command['vecs'])
+            case 'search':
+                return self.search(command['query'], command['k'])
             case 'save_index':
                 pass
             case _:
@@ -131,5 +127,29 @@ class DBShard:
             
         return {'status': 'success'}
 
+    def search(self, query: np.ndarray, k: int):
+        with self.lock.reader_lock():
+            try:
+                D, I = self.index.search(query, k)
+                return {'status': 'success', 'distances': D, 'indices': I}
+            except Exception as e:
+                return {'status': 'error', 'message': str(e)}
+        
+        
+
     def save_index(self):
         self.save_index()
+        
+        
+@click.command()
+@click.option('--dimension', 'dimension',  type=int, required=True)
+@click.option('--shard_id', 'shard_id', type=int, required=True)
+def main(dimension, shard_id):
+    shard = DBShard(dimension, shard_id)
+    while True:
+        time.sleep(1)    
+    
+
+if __name__ == '__main__':
+    main()
+

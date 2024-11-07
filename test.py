@@ -1,5 +1,5 @@
-from shard import DBShard
-from coordinator import DBShardMomma
+from vectordb.shard import DBShard
+from vectordb.coordinator import DBShardMomma
 import numpy as np
     
 def main():

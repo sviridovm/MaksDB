@@ -9,19 +9,17 @@ class rwLock:
         self.wLock: threading.Lock = threading.Lock()
 
     def acquire_rLock(self):
-        self.rLock.acquire()
-        readers += 1
-        if readers == 1:
-            self.wLock.Lock()
-        self.rLock.release()
+        with self.rLock:
+            readers += 1
+            if readers == 1:
+                self.wLock.Lock()
 
     def release_rlock(self):
-        self.rLock.acquire()
-        assert self.readers > 0
-        self.readers -= 1
-        if self.readers == 0:
-            self.wLock.release()
-        self.rLock.release()
+        with self.rLock:
+            assert self.readers > 0
+            self.readers -= 1
+            if self.readers == 0:
+                self.wLock.release()
 
     def acquire_wLock(self):
         self.wLock.acquire()

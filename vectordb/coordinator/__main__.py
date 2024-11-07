@@ -1,3 +1,5 @@
+import time
+import click
 import faiss
 import numpy as np
 import json_tricks as json
@@ -7,7 +9,6 @@ import threading
 from threading import Thread
 import redis
 from concurrent.futures import ThreadPoolExecutor, Future
-import time
 
 
 
@@ -59,33 +60,24 @@ class DBShardMomma:
         # while True:
         for message in pubsub.listen():
             # if message['type'] == 'message':
-                # print(message['data']
                 # message = pubsub.get_message()
                 if message is None:
                     continue
 
-                print(message)
-
                 data = json.loads(message['data'].decode('utf-8'))
-                # msg_type = message['type']
 
-                print("RECEIVED RESPONSE")
 
-                # data = json.loads(message['data'])
                 response_id = data.pop('response_id')
                 
                 with self.responses_lock:
                     if response_id in self.responses:
                         future = self.responses.pop(response_id)
                         future.set_result(data)
-                # time.sleep(0.01)
 
     def publish_msg(self, shard_id: int, message: str):
         channel = f'Channel{shard_id}'        
         self.redis_client.publish(channel, message)
         
-
-
     def exec_command(self, command: dict, shard_ids: list[int], timeout=10):
         # generate response id based on thread that handles the request
         response_id = threading.get_ident()
@@ -94,22 +86,15 @@ class DBShardMomma:
         # value that will be populated when the response is received
         future_response = Future()
         
-        
         with self.responses_lock:
             self.responses[response_id] = future_response
 
-        
-
         # send msg to shard
         for shard_id in shard_ids:
-            
             try:
-                # encode command into a string as utf-8
                 msg = json.dumps(command).encode('utf-8')
-                # msg = json.dumps(command)
             except Exception as e:
                 print(e)
-            # print(msg)
             
             self.publish_msg(shard_id, msg)
 
@@ -120,32 +105,44 @@ class DBShardMomma:
 
     def add_vector(self, vector_id: int, vector: np.ndarray):
         vec = np.reshape(vector, (1, -1))
-        
         cluster_ids = self.index.quantizer.assign(vec, k = 1)[0]
             
-            
-        # print(cluster_ids)
-        # self.shards[cluster_id].add_vectors(
-            # ids=[vector_id], vecs=[vector])   
-    
-        # vec_as_list = list(vec[0])
-        # print(vec_as_list)
-    
         command = {'type': 'add_vector', 
                    'id': vector_id, 
                    'vec': vec}
-        
-        print("COMMAND IS ", command)
         
         return self.executor.submit(self.exec_command, command, cluster_ids)
         
     # def add_vectors(self, vector_ids: list[int], vectors: np.ndarray):
         
+    def search(self, query: np.ndarray, k: int):
+        query = np.reshape(query, (1, -1))
+
+        cluster_ids = self.index.quantizer.assign(query, k = 1)[0]
+        
+        command = {'type': 'search',
+                   'query': query,
+                   'k': k}
+        
+        return self.exec_command(command, cluster_ids)        
     
-    def get_vector(self, vector_id: int):
-        # cluster_id = self.kmeans.
-        pass
+    # def get_vector(self, vector_id: int):
+    #     command = {'type': 'get_vector', 
+    #                'id': vector_id}
+        
+    #     return self.exec_command(command, [0])
 
 
 
 
+@click.command()
+@click.option('--dimension', 'dimension', type=int, required=True)
+@click.option('--num_clusters', 'num_clusters', type=int, required=True)
+def main(dimension, num_clusters):
+    shard = DBShardMomma(dimension=dimension, num_clusters=num_clusters)
+    while True:
+        time.sleep(1)    
+    
+
+if __name__ == '__main__':
+    main()
