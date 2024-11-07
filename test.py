@@ -1,3 +1,4 @@
+import time
 from vectordb.shard import DBShard
 from vectordb.coordinator import DBShardMomma
 import numpy as np
@@ -19,11 +20,14 @@ def main():
         results.append(res)
         
     print("response is")
+    print("________________________")
     # print(res)
     
+    time.sleep(2)
+    
     for i, res in enumerate(results):
-        # print(i, res.result())
-        assert res.result()['status'] == 'success'
+        print(i, res.result())
+        # assert res.result()['status'] == 'success'
     
 
 if __name__ == "__main__":

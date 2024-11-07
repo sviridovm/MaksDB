@@ -2,11 +2,25 @@
 
 set -Eeuo pipefail
 
+usage () {
+    echo " $0 (start | stop )"
+}
 
-# redis-server
+if [ $# -ne 1 ]; then
+usage
+exit 1
+fi
+
+case $1 in 
+"start" )
+
+echo "starting db ... "
 coordinator --dimension 10 --num_clusters 10
 sleep 1
 
 for i in $(seq 0 9); do
     shard --dimension 10 --cluster_id $i
 done
+
+;;
+

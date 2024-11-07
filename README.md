@@ -10,9 +10,9 @@ Planned Updates:
 - Add support for replicas with a distributed consensus algorithm
 - Develop a CLI  
 
-
 Usage:
 
 ```bash
-        bin/test
+        poetry install
+        bin/maksdb start
 ```

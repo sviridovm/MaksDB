@@ -8,7 +8,10 @@ from vectordb.utils.rw_lock import rwLock
 from threading import Thread
 import redis
 from concurrent.futures import ThreadPoolExecutor, Future
+import logging
 
+
+logging.basicConfig(level=logging.DEBUG, format='%(threadName)s: %(message)s')
 class DBShard:
     def __init__(self, dimension: int, id: int):
         index = faiss.IndexFlatL2(dimension)
@@ -16,16 +19,20 @@ class DBShard:
         self.lock = rwLock()
         self.shard_id = id
         self.redis_client = redis.Redis()
-        self.pubsub = self.redis_client.pubsub(ignore_subscribe_messages=True)
-        self.pubsub.subscribe(f'Channel{id}')
-        print("LISTENING ON CHANNEL ", f'Channel{id}')
+        # self.pubsub = self.redis_client.pubsub(ignore_subscribe_messages=True)
+        # self.pubsub.subscribe(f'Channel{id}')
+        # print("LISTENING ON CHANNEL ", f'Channel{id}')
+        # self.listen_thread = Thread(target = self.listen_for_coord, daemon=True).start()
 
         self.executor = ThreadPoolExecutor(max_workers=10)
+        
+        self.listen_thread = Thread(target = self.process_coord_stream, daemon=True).start()
 
-        self.listen_thread = Thread(target = self.listen_for_coord, daemon=True).start()
 
         
+    @DeprecationWarning
     def listen_for_coord(self):
+        
         resp_channel = f'CoordinatorChannel'  
         
                
@@ -53,6 +60,56 @@ class DBShard:
                 print(e)
                 self.redis_client.publish(resp_channel, {'status': 'error', 'message': str(e)})
 
+
+    def process_coord_stream(self):
+        stream_name = f'Cluster{self.shard_id}Stream'
+        response_stream = 'CoordinatorStream'
+        consumer_name = f'shard_{self.shard_id}'
+        consumer_group = f'shard_group_{self.shard_id}'
+        
+        
+        self.redis_client.xtrim(stream_name, 0)
+        try:
+            self.redis_client.xgroup_create(stream_name, consumer_group, id='0', mkstream=True)
+        except redis.exceptions.ResponseError as e:
+            if "BUSYGROUP Consumer Group name already exists" in str(e):
+                # logging.debug("Group already exists")
+                pass
+            else:
+                raise e
+        
+        while True:
+            entries = self.redis_client.xreadgroup(consumer_group, consumer_name, {stream_name: '>'}, count=1, block=5000)
+
+            if not entries:
+                continue
+            
+            for stream, entry in entries:
+                message_id, message = entry[0]
+                # logging.debug(f"Received Message: {message}")
+
+                data = message[b'message'].decode('utf-8')
+                data = json.loads(data)
+                
+                # data = json.loads(message['data'].decode('utf-8'))
+                future = self.executor.submit(self.exec_command, data) 
+                
+                try: 
+                    response = future.result()
+                    
+                    
+                    response['response_id'] = data['response_id']
+                    response = json.dumps(response).encode('utf-8')
+                    
+                    self.redis_client.xadd(response_stream, {'message': response})
+                except Exception as e:
+                    logging.error(e)                    
+                    self.redis_client.xadd(response_stream, {'status': 'error', 'message': str(e)})
+                    
+                    
+                self.redis_client.xack(stream_name, consumer_group , message_id)
+                
+
         
 
     def exec_command(self, command: dict):        
@@ -60,7 +117,7 @@ class DBShard:
         
         match command_type:
             case 'add_vector':
-                return self.add_vectors(command['id'], np.array(command['vec']))
+                return self.add_vectors(command['id'], np.array(command['vec']))            
             case 'get_vector':
                 return self.get_vector(command['id'])
             case 'remove_vectors':
@@ -96,7 +153,7 @@ class DBShard:
             except Exception as e:
                 return {'status': 'error', 'message': str(e)}
 
-    def add_vectors(self, ids: list[str], vecs: np.ndarray[np.float64]):
+    def add_vectors(self, ids: list[int], vecs: np.ndarray[np.float64]):
         with self.lock.writer_lock():
             try: 
                 self.index.add_with_ids(vecs, ids)
