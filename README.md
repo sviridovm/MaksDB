@@ -14,7 +14,5 @@ Planned Updates:
 Usage:
 
 ```bash
-        $ redis-cli
-        $ python3.12 test.py
-
+        bin/test
 ```

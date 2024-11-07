@@ -3,6 +3,7 @@
 set -Eeuo pipefail
 
 
+# redis-server
 coordinator --dimension 10 --num_clusters 10
 sleep 1
 
