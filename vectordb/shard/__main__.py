@@ -5,7 +5,7 @@ import numpy as np
 import json_tricks as json
 import redis.client
 from vectordb.utils.rw_lock import rwLock
-from threading import Thread
+from threading import Thread, Lock
 import redis
 from concurrent.futures import ThreadPoolExecutor, Future
 import logging
@@ -13,19 +13,51 @@ import logging
 
 logging.basicConfig(level=logging.DEBUG, format='%(threadName)s: %(message)s')
 class DBShard:
-    def __init__(self, dimension: int, id: int):
+    TIMEOUT_INTERVAL = 5
+    
+    
+    def __init__(self, dimension: int, cluster_id: int, shard_id: int, primary_id: int, other_shard_ids: list[int] = []):
+        """
+        Args:
+            dimension (int): Dimension of the vectors
+            cluster_id (int): Cluster id that the shard belongs to
+            shard_id (int): Id of the shard, must be unique within the cluster
+            primary_id (int): Id of the primary shard
+            other_shard_ids (list[int]): List of ids of other shards in the cluster
+        """
+        
+        
         index = faiss.IndexFlatL2(dimension)
         self.index = faiss.IndexIDMap2(index)
         self.lock = rwLock()
-        self.shard_id = id
+        self.cluster_id = cluster_id
         self.redis_client = redis.Redis()
-        # self.pubsub = self.redis_client.pubsub(ignore_subscribe_messages=True)
-        # self.pubsub.subscribe(f'Channel{id}')
-        # print("LISTENING ON CHANNEL ", f'Channel{id}')
-        # self.listen_thread = Thread(target = self.listen_for_coord, daemon=True).start()
+        self.leader_lock = Lock()
+
+
+        self.HEARTBEAT_KEY = f'Cluster{cluster_id}Shard{shard_id}Heartbeat'
+        self.LEADER_HEARTBEAT_KEY = f'Cluster{cluster_id}LeaderHeartbeat'
+        self.redis_client.set(self.HEARTBEAT_KEY, shard_id, ex=DBShard.TIMEOUT_INTERVAL)
+
+
+        self.shard_id = shard_id
+        self.primary_id = primary_id
+        self.is_primary = shard_id == primary_id
+
+        if self.is_primary:
+            self.redis_client.set(self.LEADER_HEARTBEAT_KEY, primary_id, ex=DBShard.TIMEOUT_INTERVAL)
+
+
+        # list of replicas in the shard
+        self.replicas = [Replica(i, i == primary_id) for i in other_shard_ids if i != shard_id]
+        
 
         self.executor = ThreadPoolExecutor(max_workers=10)
         
+        
+        self.heartbeat_thread = Thread(target=self.send_heartbeat, daemon=True).start()
+        
+        self.monitor_leader_thread = Thread(target=self.monitor_leader_heartbeat, daemon=True).start()
         self.listen_thread = Thread(target = self.process_coord_stream, daemon=True).start()
 
 
@@ -62,7 +94,7 @@ class DBShard:
 
 
     def process_coord_stream(self):
-        stream_name = f'Cluster{self.shard_id}Stream'
+        stream_name = f'Cluster{self.cluster_id}Stream'
         response_stream = 'CoordinatorStream'
         consumer_name = f'shard_{self.shard_id}'
         consumer_group = f'shard_group_{self.shard_id}'
@@ -78,40 +110,42 @@ class DBShard:
             else:
                 raise e
         
-        while True:
-            entries = self.redis_client.xreadgroup(consumer_group, consumer_name, {stream_name: '>'}, count=1, block=5000)
+        stream_pos = '>'
+        
+        while True:                
+            
+            entries = self.redis_client.xreadgroup(consumer_group, consumer_name, {stream_name: stream_pos}, count=1, block=1000)
 
             if not entries:
                 continue
             
+            
             for stream, entry in entries:
+                
+                
+                if not entry:
+                    continue
+                
                 message_id, message = entry[0]
                 # logging.debug(f"Received Message: {message}")
-
+                
                 data = message[b'message'].decode('utf-8')
                 data = json.loads(data)
                 
-                # data = json.loads(message['data'].decode('utf-8'))
-                future = self.executor.submit(self.exec_command, data) 
-                
-                try: 
-                    response = future.result()
-                    
-                    
-                    response['response_id'] = data['response_id']
-                    response = json.dumps(response).encode('utf-8')
-                    
-                    self.redis_client.xadd(response_stream, {'message': response})
-                except Exception as e:
-                    logging.error(e)                    
-                    self.redis_client.xadd(response_stream, {'status': 'error', 'message': str(e)})
-                    
-                    
-                self.redis_client.xack(stream_name, consumer_group , message_id)
-                
-
-        
-
+                def process_message(data: dict, message_id: str):
+                    try: 
+                        response = self.exec_command(data)                        
+                        response['response_id'] = data['response_id']
+                        response = json.dumps(response).encode('utf-8')
+                        
+                        self.redis_client.xadd(response_stream, {'message': response})
+                    except Exception as e:
+                        logging.error(e)                    
+                        self.redis_client.xadd(response_stream, {'status': 'error', 'message': str(e)})
+                    finally:
+                        self.redis_client.xack(stream_name, consumer_group , message_id)
+                        
+                self.executor.submit(process_message, data, message_id)
     def exec_command(self, command: dict):        
         command_type = command['type']
         
@@ -130,10 +164,6 @@ class DBShard:
                 pass
             case _:
                 raise ValueError(f"Invalid Command Type: {command_type}")
-
-    def save_index(self):
-        faiss.write_index(self.index, f"index_{self.id}.index")
-
 
     # CRUD Operations
 
@@ -193,16 +223,87 @@ class DBShard:
                 return {'status': 'error', 'message': str(e)}
         
         
-
     def save_index(self):
-        self.save_index()
+        with self.lock.writer_lock():
+            try:
+                faiss.write_index(self.index, f'Cluster{self.cluster_id}Shard{self.shard_id}.index')
+                return {'status': 'success'}
+            except Exception as e:
+                return {'status': 'error', 'message': str(e)}
+
+    def monitor_leader_heartbeat(self):
+        while True:
+            leader_id = self.redis_client.get(self.LEADER_HEARTBEAT_KEY)                
+            if leader_id is None:
+                # no leader
+                with self.leader_lock:
+                    assert not self.is_primary
+                    self.is_primary = False
+                    self.primary_id = None
+                    self.failover()
+            else:
+                if leader_id != self.primary_id:
+                    # leader has changed
+                    with self.leader_lock:
+                        self.primary_id = leader_id
+                        self.is_primary = leader_id == self.shard_id
+                else: 
+                    # leader is the same
+                    pass
+            time.sleep(1)
+            
+            
+    def failover(self) -> bool:
+        """Try to become leader"""
         
         
+        # Already have leader lock
+        assert not self.is_primary
+        assert self.leader_lock.locked()
+        
+        retries = 0
+        while retries < 3:
+            if self.redis_client.set(self.LEADER_HEARTBEAT_KEY, self.shard_id, nx=True, ex=DBShard.TIMEOUT_INTERVAL):
+                self.is_primary = True
+                self.primary_id = self.shard_id
+                return True
+            retries += 1
+            time.sleep(1)
+        return False
+
+        
+    
+    def send_heartbeat(self):
+        """SET the heartbeat key in redis every 0.5 seconds"""
+        while True:
+            # self.redis_client.set(self.HEARTBEAT_KEY, self.shard_id, ex=DBShard.TIMEOUT_INTERVAL)
+            self.redis_client.expire(self.HEARTBEAT_KEY, DBShard.TIMEOUT_INTERVAL)
+            with self.leader_lock:
+                if self.is_primary:
+                    # if primary, send distinct heart beat
+                    # TODO: REFACTOR SO THAT PRIMARY DOES NOT HAVE A SPECIFIC HEARTBEAT
+                    self.redis_client.expire(self.LEADER_HEARTBEAT_KEY, DBShard.TIMEOUT_INTERVAL)
+                    
+            time.sleep(0.5)
+            
+    
+
+# Class to represents other shards in the cluster
+class Replica:
+    def __init__(self, id: int, is_primary: bool = False):
+        self.shard_id = id
+        self.is_leader = is_primary
+        
+    
+    
+    
 @click.command()
 @click.option('--dimension', 'dimension',  type=int, required=True)
+@click.option('--cluster_id', 'cluster_id', type=int, required=True)
 @click.option('--shard_id', 'shard_id', type=int, required=True)
-def main(dimension, shard_id):
-    shard = DBShard(dimension, shard_id)
+@click.option('--primary_id', 'primary_id', type=int, required=True)
+def main(dimension, cluster_id, shard_id, primary_id):
+    DBShard(dimension, cluster_id, shard_id, primary_id)
     while True:
         time.sleep(1)    
     

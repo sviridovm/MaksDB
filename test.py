@@ -11,13 +11,14 @@ def main():
     shards = []
 
     for i in range(num_clusters):
-        shards.append(DBShard(dimension=4, id=i))
+        shards.append(DBShard(dimension=4, cluster_id=i, shard_id=0, primary_id=0))
 
 
     results = []
-    for _ in range(100):
+    for _ in range(50):
         res = db.add_vector(1, np.random.random((4,)).astype('float32'))
         results.append(res)
+        # time.sleep(2)
         
     print("response is")
     print("________________________")

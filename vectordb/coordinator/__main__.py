@@ -117,7 +117,7 @@ class DBShardMomma:
         
     def add_msg_to_stream(self, cluster_id: int, message: str):
         stream = f'Cluster{cluster_id}Stream'
-        logging.debug(f'Adding message to stream {stream}')
+        # logging.debug(f'Adding message to stream {stream}')
         
         try:
             entry_id = self.redis_client.xadd(stream, {'message': message})
