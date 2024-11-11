@@ -21,6 +21,6 @@ Usage:
 
 ```bash
         poetry install
-        maksb start
-        maksb stop
+        maksdb start
+        maksdb stop
 ```
