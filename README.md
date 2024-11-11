@@ -17,10 +17,43 @@ Planned Updates:
 - Dynamic Centroid Initialization
 - Multiprobing and Redudant Storing
 
-Usage:
+Usage Through CLI (WIP):
 
 ```bash
         poetry install
         maksdb start
         maksdb stop
+```
+
+:warning: **WARNING:**  ⚠️ Soon to be deprecated.  
+Usage Through Python Interface:
+
+```python
+        import time
+        from vectordb.shard import DBShard
+        from vectordb.coordinator import DBShardMomma
+        import numpy as np
+
+        num_clusters = 2
+        # create coordinator
+        db = DBShardMomma(dimension=4, num_clusters=2, random_seed=1228)
+        shards = []
+
+        # create shards
+        for i in range(num_clusters):
+                shards.append(DBShard(dimension=4, cluster_id=i, shard_id=0, primary_id=0))
+
+        # add 10 random vectors
+        results = []
+        for _ in range(10):
+                res = db.add_vector(1, np.random.random((4,)).astype('float32'))
+                # res is of type concurrent.Futures
+                results.append(res)
+                
+        # just to ensure log messages do not interfere with output
+        time.sleep(2)
+
+        # See Results
+        for i, res in enumerate(results):
+        print(i, res.result())
 ```
