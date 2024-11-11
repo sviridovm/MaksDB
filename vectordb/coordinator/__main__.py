@@ -17,7 +17,7 @@ logging.basicConfig(level=logging.DEBUG, format='%(threadName)s: %(message)s')
 class DBShardMomma:
     def __init__(self, dimension: int, num_clusters: int = 10, random_centroids=True, random_seed=None, redis_host='localhost', redis_port=6379):
         if random_centroids and not random_seed:
-            warnings.warn("Random Centroids has Irreproducible behaviour")
+            warnings.warn("Random centroids have irreproducible behaviour")
 
         if random_seed:
             np.random.seed(random_seed)
@@ -82,21 +82,12 @@ class DBShardMomma:
             try:
                 entries = self.redis_client.xreadgroup(consumer_group, consumer_name, {stream_name: '>'}, count=1, block=0)
                 if not entries:
-                    # print("NO ENTRIES")
                     continue
                 
                 for stream, entry in entries:
                     message_id, message = entry[0]
 
-                    # print("0" * 50)
-                    # print("MESSAGE RECIEVED FROM SHARD")
-                    # print(message)
-                    # print("0" * 50)
-
-                    
                     data = json.loads(message[b'message'].decode('utf-8'))
-
-                    # print(data)
 
                     response_id = data.pop('response_id')
                     
@@ -152,6 +143,22 @@ class DBShardMomma:
         # wait for response
         return future_response.result(timeout=timeout)
 
+    
+    def shutdown(self):
+        """Tell the coordinator to shutdown"""
+        # !TODO: How to get shutdown message from cli?
+        for response in self.responses.values():
+            response.cancel()
+        
+        command = {'type': 'shutdown'}
+        for cluster_id in range(self.num_clusters):
+            stream = f'Cluster{cluster_id}Stream'
+            # self.redis_client.delete(stream)
+            self.add_msg_to_stream(cluster_id, json.dumps(command).encode('utf-8'))
+
+        self.redis_client.close()
+        self.executor.shutdown()
+        
 
     def add_vector(self, vector_id: int, vector: np.ndarray):
         vec = np.reshape(vector, (1, -1))
@@ -193,8 +200,6 @@ class DBShardMomma:
 @click.option('--num_clusters', 'num_clusters', type=int, required=True)
 def main(dimension, num_clusters):
     shard = DBShardMomma(dimension=dimension, num_clusters=num_clusters)
-    while True:
-        time.sleep(1)    
     
 
 if __name__ == '__main__':

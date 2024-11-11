@@ -1,0 +1,4 @@
+
+dimension : 4
+num_clusters: 3
+num_replicas_per_cluster : 1

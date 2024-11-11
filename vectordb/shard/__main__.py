@@ -58,7 +58,7 @@ class DBShard:
         self.heartbeat_thread = Thread(target=self.send_heartbeat, daemon=True).start()
         
         self.monitor_leader_thread = Thread(target=self.monitor_leader_heartbeat, daemon=True).start()
-        self.listen_thread = Thread(target = self.process_coord_stream, daemon=True).start()
+        self.listen_thread = Thread(target = self.process_coord_stream).start()
 
 
         
@@ -162,6 +162,9 @@ class DBShard:
                 return self.search(command['query'], command['k'])
             case 'save_index':
                 pass
+            case 'shutdown':
+                self.shutdown()
+                # does not return
             case _:
                 raise ValueError(f"Invalid Command Type: {command_type}")
 
@@ -221,7 +224,6 @@ class DBShard:
                 return {'status': 'success', 'distances': D, 'indices': I}
             except Exception as e:
                 return {'status': 'error', 'message': str(e)}
-        
         
     def save_index(self):
         with self.lock.writer_lock():
@@ -286,7 +288,14 @@ class DBShard:
                     
             time.sleep(0.5)
             
-    
+    def shutdown(self):
+        """Shutdown the shard"""
+        self.redis_client.delete(self.HEARTBEAT_KEY)
+        self.redis_client.delete(self.LEADER_HEARTBEAT_KEY)
+        self.redis_client.close()
+        self.executor.shutdown()
+        exit(0)
+        
 
 # Class to represents other shards in the cluster
 class Replica:
@@ -302,8 +311,13 @@ class Replica:
 @click.option('--cluster_id', 'cluster_id', type=int, required=True)
 @click.option('--shard_id', 'shard_id', type=int, required=True)
 @click.option('--primary_id', 'primary_id', type=int, required=True)
-def main(dimension, cluster_id, shard_id, primary_id):
-    DBShard(dimension, cluster_id, shard_id, primary_id)
+@click.option('--other_shard_ids', 'other_shard_ids', type=str, default='', required=False)
+def main(dimension, cluster_id, shard_id, primary_id, other_shard_ids):
+    other_shard_ids = [int(i) for i in other_shard_ids.split(',')]
+    # other_shard_ids = list[int](other_shard_ids)
+    # print(other_shard_ids)
+    
+    DBShard(dimension, cluster_id, shard_id, primary_id, other_shard_ids)
     while True:
         time.sleep(1)    
     

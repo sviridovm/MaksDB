@@ -34,6 +34,7 @@ uvicorn = "0.32.0"
 [tool.poetry.scripts]
 coordinator = "vectordb.coordinator.__main__:main"
 shard = "vectordb.shard.__main__:main"
+maksdb = "vectordb.cli.cli:cli"
 
 [build-system]
 requires = ["poetry-core"]
