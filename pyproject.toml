@@ -8,7 +8,6 @@ readme = "README.md"
 [tool.poetry.dependencies]
 python = "^3.12"
 annotated-types = "0.7.0"
-annoy = "1.17.3"
 anyio = "4.6.2.post1"
 click = "8.1.7"
 faiss-cpu = "1.9.0"
@@ -36,6 +35,7 @@ pyyaml = "6.0.2"
 coordinator = "vectordb.coordinator.__main__:main"
 shard = "vectordb.shard.__main__:main"
 maksdb = "vectordb.cli.cli:cli"
+server = "vectordb.api.api:main"
 
 [build-system]
 requires = ["poetry-core"]

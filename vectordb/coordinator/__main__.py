@@ -10,11 +10,19 @@ from threading import Thread
 import redis
 from concurrent.futures import ThreadPoolExecutor, Future
 import logging 
+import os
 
 logging.basicConfig(level=logging.DEBUG, format='%(threadName)s: %(message)s')
 
 
+def bruh(text: str):
+    FILE = 'var/bruh.txt'
+    with open(FILE, 'a') as f:
+        f.write(text + '\n')
+
 class DBShardMomma:
+    COMMAND_CHANNEL = "coordinator_commands"
+    
     def __init__(self, dimension: int, num_clusters: int = 10, random_centroids=True, random_seed=None, redis_host='localhost', redis_port=6379):
         if random_centroids and not random_seed:
             warnings.warn("Random centroids have irreproducible behaviour")
@@ -43,11 +51,11 @@ class DBShardMomma:
         # self.index.quantizer = kmeans
         self.redis_client = redis.Redis(host=redis_host, port=redis_port)
         self.executor = ThreadPoolExecutor(max_workers=num_clusters)
-        
+                
         self.responses = {}
         self.responses_lock = threading.Lock()
         
-        
+        # self.api_thread = Thread(target=self.listen_for_api, daemon=False).start()
         Thread(target=self.listen_for_shard_resps, daemon=True).start()
 
 
@@ -56,16 +64,10 @@ class DBShardMomma:
         stream_name = 'CoordinatorStream'
         consumer_group = 'CoordinatorGroup'
         consumer_name = 'Coordinator'
-        # pubsub = self.redis_client.pubsub(ignore_subscribe_messages=True)
-        # pubsub.subscribe(resp_channel)
 
-        # for message in pubsub.listen():
-        #     # if message['type'] == 'message':
-        #         # message = pubsub.get_message()
-        #         if message is None:
-        #             continue
         
         # self.redis_client.xtrim(stream_name, 0)
+        self.redis_client.delete(stream_name)
         
         try:
             self.redis_client.xgroup_create(stream_name, consumer_group, id='0', mkstream=True)
@@ -162,10 +164,17 @@ class DBShardMomma:
 
     def add_vector(self, vector_id: int, vector: np.ndarray):
         vec = np.reshape(vector, (1, -1))
-        cluster_ids = self.index.quantizer.assign(vec, k = 1)[0]
+        
+        try :
+            cluster_ids = self.index.quantizer.assign(vec, k = 1)[0]
+        except Exception as e:
+            # return Future().set_result(str(e))
+            return self.executor.submit(str, e)
+            raise e
+        
+        
+        bruh(f"ADDING IN CLUSTERS { cluster_ids}")
             
-        # print(vec)
-        # print(cluster_ids)
             
         command = {'type': 'add_vector', 
                    'id': [vector_id], 
@@ -179,6 +188,8 @@ class DBShardMomma:
         query = np.reshape(query, (1, -1))
 
         cluster_ids = self.index.quantizer.assign(query, k = 1)[0]
+        bruh(f"SEARCHING IN CLUSTERS { cluster_ids}")
+        
         
         command = {'type': 'search',
                    'query': query,
@@ -192,14 +203,94 @@ class DBShardMomma:
         
     #     return self.exec_command(command, [0])
 
+    @DeprecationWarning
+    def listen_for_api(self):
+        pubsub = self.redis_client.pubsub(
+            ignore_subscribe_messages=True
+        )
+        pubsub.subscribe(self.COMMAND_CHANNEL)
+        RESPONSE_CHANNEL = "coordinator_responses"
+                
+        # self.redis_client.publish(RESPONSE_CHANNEL, 'Coordinator is ready')
+
+        api_executor = ThreadPoolExecutor(max_workers=None)
+    
+        while True:
+            for message in pubsub.listen():      
+                if message['type'] != 'message':
+                    continue                
+                
+                # print(message)
+                data = json.loads(message['data'].decode('utf-8'))
+                # print(data)
+                command_id = data['id']
+                
+                # self.redis_client.publish(RESPONSE_CHANNEL, json.dumps({'id': command_id, 'data': 'received'}))
+                
+                def handle_command(data):
+                    match data['type']:
+                        case 'add_vector':
+                            vector_id = data['vec_id']
+                            vector = data['vec']
+                            return self.add_vector(vector_id, vector)
+                        case 'search':
+                            query = data['query']
+                            k = data['k']
+                            return self.search(query, k)
+                        case 'shutdown':
+                            return self.shutdown()
+                        case _:
+                            pass
+                        
+                def callback(future: Future):
+                    result = future.result()
+                    print('5' * 50)
+                    print(result)
+                    print('5' * 50)
+                    
+                    
+                    print("FUTURE US FUCKING RUNNING DURING THE CALLBAC BECAUSE OF SOME BULLSHIT")
+                    self.redis_client.publish(RESPONSE_CHANNEL, json.dumps({'id': command_id, 'data': result}).encode('utf-8'))
+                
+                with api_executor as executor:
+                    future = executor.submit(handle_command, data)
+                    future.add_done_callback(
+                        callback
+                    )
 
 
 
 @click.command()
-@click.option('--dimension', 'dimension', type=int, required=True)
-@click.option('--num_clusters', 'num_clusters', type=int, required=True)
-def main(dimension, num_clusters):
-    shard = DBShardMomma(dimension=dimension, num_clusters=num_clusters)
+# @click.option('--dimension', 'dimension', type=int, required=True)
+# @click.option('--num_clusters', 'num_clusters', type=int, required=True)
+@click.option('--config', 'config', type=str, required=True)
+def main(config: str):
+    from vectordb.utils.config_parser import parse_config
+    
+    config = parse_config(config)
+    
+    try:
+        dimension = config.get('dimension')
+        num_clusters = config.get('num_clusters')
+    except KeyError as e:
+        print(f"Missing key in config file: {e}")
+        raise e
+    
+    redis_host = os.getenv('REDIS_HOST')
+    redis_port = os.getenv('REDIS_PORT')
+    
+    click.echo(f"Starting coordinator with dimension {dimension} and {num_clusters} clusters")
+    exit()
+    
+    shard = DBShardMomma(
+        dimension=dimension, 
+        num_clusters=num_clusters,
+        redis_host=redis_host,
+        redis_port=redis_port
+        )
+    
+    while True:
+        time.sleep(1)    
     
 
 if __name__ == '__main__':

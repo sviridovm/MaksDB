@@ -1,0 +1,70 @@
+version: '3.8'
+
+
+services:
+  redis:
+    image: redis:alpine
+    container_name: redis
+    ports:
+      - "6379:6379"
+    networks:
+      - app-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 1s
+      timeout: 1s
+      retries: 3
+
+
+  
+  coordinator_service:
+    build:
+      context: .
+      dockerfile: Dockerfile.coordinator
+    # container_name: coordinator
+    image: coordinator_image
+    volumes:
+      - ./var:/app/var
+      - ./config/config.yaml:/app/config/config.yaml
+    environment:
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_DB = 0
+      - CONFIG_PATH=./config/config.yaml
+    ports:
+      - "1256:1256"
+    depends_on:
+      redis:
+        condition: service_healthy
+
+    networks:
+      - app-network
+
+
+  shard_service:
+    build:
+      context: .
+      dockerfile: Dockerfile.shard
+    # container_name: shard
+    image: shard_image
+    mem_limit: 512m
+    mem_reservation: 256m
+    volumes:
+      - ./var:/app/var
+      - ./config/config.yaml:/app/config/config.yaml
+    environment:
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_DB = 0
+      - CONFIG_PATH=./config/config.yaml
+      - SHARD_NAME=shard_service
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - app-network
+
+
+networks:
+  app-network:
+    driver: bridge

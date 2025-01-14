@@ -21,13 +21,15 @@ Usage Through CLI (WIP):
 
 ```bash
         poetry install
+        redis-server
         maksdb start
         maksdb stop
 ```
 
 Usage Through Python Interface:
-:warning: **WARNING:**  ⚠️ Soon to be deprecated.  
 
+:warning: **WARNING:**  ⚠️ Soon to be deprecated.
+  
 ```python
 import time
 from vectordb.shard import DBShard

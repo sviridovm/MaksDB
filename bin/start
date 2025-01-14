@@ -1,0 +1,18 @@
+#!/bin/bash
+
+# Check if Docker is running
+if (! docker stats --no-stream ); then
+  echo "Docker is not running. Please start Docker and try again."
+  exit 1
+fi
+
+# Start the Docker Compose services
+docker-compose up -d --build
+
+# Check if the services started successfully
+if [ $? -eq 0 ]; then
+  echo "Started coordinator, shards, and Redis using Docker Compose."
+else
+  echo "Failed to start services. Check the Docker Compose output for errors."
+  exit 1
+fi

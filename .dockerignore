@@ -1,0 +1,11 @@
+venv/
+**/__pycache__/
+**/*.pyc
+.vscode/
+Dockerfile.*
+docker-compose.*
+.gitignore
+.git/
+Annoy/
+tests/
+dump.rdb

@@ -1,0 +1,12 @@
+#!/bin/bash
+
+# Stop the Docker Compose services
+docker-compose down
+
+# Check if the services stopped successfully
+if [ $? -eq 0 ]; then
+  echo "Stopped all Docker Compose services."
+else
+  echo "Failed to stop services. Check the Docker Compose output for errors."
+  exit 1
+fi

@@ -1,1 +1,1 @@
-from vectordb.coordinator.__main__ import DBShardMomma
+from .__main__ import DBShardMomma
