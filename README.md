@@ -27,6 +27,7 @@ Usage Through CLI (WIP):
 ```
 
 Usage Through Python Interface:
+:warning: **WARNING:**  ⚠️ Soon to be deprecated.  
 
 :warning: **WARNING:**  ⚠️ Soon to be deprecated.
   
